@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "microapple-sheet"
+version = "0.1.0"
+description = "Engine-routed, Rule-0-safe, live-bridge Excel MCP server"
+requires-python = ">=3.12"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Walter Wong"}]
+keywords = ["excel", "mcp", "xlsx", "openpyxl", "applescript", "model-context-protocol"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX",
+    "Operating System :: OS Independent",
+    "Topic :: Office/Business :: Financial :: Spreadsheet",
+]
+dependencies = [
+    "mcp[cli]",
+    "openpyxl",
+    "xlsxwriter",
+    "pandas",
+    "watchdog",
+    "lxml",
+    "Pillow",
+]
+
+[project.urls]
+Homepage = "https://github.com/walter-flowo/microapple-sheet"
+Repository = "https://github.com/walter-flowo/microapple-sheet"
+Issues = "https://github.com/walter-flowo/microapple-sheet/issues"
+
+[project.scripts]
+microapple-sheet = "microapple_sheet.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/microapple_sheet"]
+
+[tool.hatch.build.targets.editable]
+# Use "compat" mode: installs actual files rather than a .pth pointer.
+# This avoids the macOS/iCloud UF_HIDDEN flag issue that causes Python 3.14
+# to skip .pth files whose names start with underscore.
+mode = "compat"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

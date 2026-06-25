@@ -1,0 +1,16 @@
+[preview]
+# Pending marker written to empty target cells before the real value lands.
+# TOML literal string — backslashes are literal, not escape sequences.
+marker = '~\.\\\o'
+enabled = true
+drain_threshold = 50
+trivial_skip = true
+
+# Colours sampled from the Apple ⏳ (U+23F3) glyph in a later phase.
+# Leave empty here; excel_config_set will populate them after Phase-2 colour sampling.
+overwrite_fill = ""
+overwrite_border_color = ""
+
+# Font for symbol-glyph markers (e.g. a Nerd Font or SF Pro).
+# Empty = inherit cell font.
+marker_font = ""

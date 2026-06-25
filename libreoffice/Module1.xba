@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE script:module PUBLIC "-//OpenOffice.org//DTD OfficeDocument 1.0//EN" "module.dtd">
+<script:module xmlns:script="http://openoffice.org/2000/script" script:name="Module1" script:language="StarBasic">
+' Module1.xba — StarBasic macro for recalc-preserving workbook edits.
+' Phase 1a.
+'
+' Invoked by libreoffice.py via:
+'   pkill -f soffice  (clear single-instance lock)
+'   soffice --headless --norestore --invisible "macro:///Standard.Module1.<MacroName>"
+'
+' Arguments are passed via a temp JSON file whose path is provided as a global
+' constant PARAM_FILE (set by the Python caller before invocation).
+'
+' Rules (from Rules_Python_Openpyxl_Scripts.md Rule 0 recipe):
+'   1. loadComponentFromURL(url, Hidden=True)
+'   2. getCellByPosition().setValue / .setString / .setFormula("=Sheet1!B4")
+'      (Excel ! refs work in LibreOffice formula syntax)
+'   3. oDoc.calculateAll()
+'   4. storeToURL(url, FilterName="Calc MS Excel 2007 XML")
+'
+' Macro stubs — Phase 1a implementation fills in the body.
+
+Sub EditCells()
+    ' Phase 1a: Read PARAM_FILE, load workbook, apply setValue/setFormula ops,
+    ' calculateAll(), storeToURL, close.
+    ' Stub — not yet implemented.
+    MsgBox "EditCells: Phase 1a not yet implemented."
+End Sub
+
+Sub RecalcOnly()
+    ' Phase 1a: Load workbook (Hidden), calculateAll(), storeToURL, close.
+    ' No edits — pure recalculation round-trip.
+    ' Stub — not yet implemented.
+    MsgBox "RecalcOnly: Phase 1a not yet implemented."
+End Sub
+</script:module>
