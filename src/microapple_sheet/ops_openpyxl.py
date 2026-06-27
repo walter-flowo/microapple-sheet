@@ -612,3 +612,96 @@ def define_name(
         return {"name": name, "ref": ref, "scope": scope}
 
     return _openpyxl_then_recalc(p, cls, mutate, backup_path)
+
+
+# ---------------------------------------------------------------------------
+# Sheet management (file engine) — add / delete / move / rename
+# ---------------------------------------------------------------------------
+
+def add_sheet(
+    path: str | Path, name: str, index: int | None = None
+) -> dict[str, Any]:
+    """Add a worksheet to a closed workbook (engine-routed, Rule-0 safe)."""
+    p = Path(path)
+    _clobber_guard(p)
+    cls = classify_workbook(p)
+    _write_guard(cls, p)
+    backup_path = backups.snapshot(p)
+
+    def mutate(wb: openpyxl.Workbook) -> dict[str, Any]:
+        if name in wb.sheetnames:
+            raise ValueError(f"Sheet {name!r} already exists.")
+        wb.create_sheet(title=name, index=index)
+        return {"sheet": name, "sheets": wb.sheetnames}
+
+    return _openpyxl_then_recalc(p, cls, mutate, backup_path)
+
+
+def delete_sheet(path: str | Path, name: str) -> dict[str, Any]:
+    """Delete a worksheet from a closed workbook (engine-routed, Rule-0 safe)."""
+    p = Path(path)
+    _clobber_guard(p)
+    cls = classify_workbook(p)
+    _write_guard(cls, p)
+    backup_path = backups.snapshot(p)
+
+    def mutate(wb: openpyxl.Workbook) -> dict[str, Any]:
+        if name not in wb.sheetnames:
+            raise ValueError(f"Sheet {name!r} not found.")
+        if len(wb.sheetnames) <= 1:
+            raise ValueError("Cannot delete the only sheet in a workbook.")
+        del wb[name]
+        return {"sheet": name, "sheets": wb.sheetnames}
+
+    return _openpyxl_then_recalc(p, cls, mutate, backup_path)
+
+
+def rename_sheet(
+    path: str | Path, old_name: str, new_name: str
+) -> dict[str, Any]:
+    """Rename a worksheet in a closed workbook (engine-routed, Rule-0 safe)."""
+    p = Path(path)
+    _clobber_guard(p)
+    cls = classify_workbook(p)
+    _write_guard(cls, p)
+    backup_path = backups.snapshot(p)
+
+    def mutate(wb: openpyxl.Workbook) -> dict[str, Any]:
+        if old_name not in wb.sheetnames:
+            raise ValueError(f"Sheet {old_name!r} not found.")
+        if new_name in wb.sheetnames:
+            raise ValueError(f"Sheet {new_name!r} already exists.")
+        wb[old_name].title = new_name
+        return {"old_name": old_name, "new_name": new_name, "sheets": wb.sheetnames}
+
+    return _openpyxl_then_recalc(p, cls, mutate, backup_path)
+
+
+def move_sheet(
+    path: str | Path,
+    name: str,
+    before: str | None = None,
+    after: str | None = None,
+) -> dict[str, Any]:
+    """Move a worksheet before/after an anchor sheet in a closed workbook."""
+    p = Path(path)
+    _clobber_guard(p)
+    cls = classify_workbook(p)
+    _write_guard(cls, p)
+    backup_path = backups.snapshot(p)
+
+    def mutate(wb: openpyxl.Workbook) -> dict[str, Any]:
+        if name not in wb.sheetnames:
+            raise ValueError(f"Sheet {name!r} not found.")
+        anchor = after if after else before
+        if not anchor:
+            raise ValueError("move_sheet requires before= or after=.")
+        if anchor not in wb.sheetnames:
+            raise ValueError(f"Anchor sheet {anchor!r} not found.")
+        ws = wb[name]
+        wb._sheets.remove(ws)  # noqa: SLF001 — stable openpyxl reorder idiom
+        insert_at = wb.sheetnames.index(anchor) + (1 if after else 0)
+        wb._sheets.insert(insert_at, ws)  # noqa: SLF001
+        return {"sheet": name, "sheets": wb.sheetnames}
+
+    return _openpyxl_then_recalc(p, cls, mutate, backup_path)

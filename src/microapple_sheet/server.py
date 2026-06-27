@@ -663,6 +663,111 @@ def excel_config_set(key: str, value: Any) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Sheet management (engine-routed: live when open, file engine when closed)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def excel_add_sheet(path: str, name: str) -> dict[str, Any]:
+    """Add a worksheet to a workbook (engine-routed).
+
+    Open in Excel → live AppleScript bridge (added at end, no save needed).
+    Closed → file engine (openpyxl, Rule-0 safe via LO recalc for computed books).
+
+    Args:
+        path: Absolute path to the workbook.
+        name: New sheet name (must not already exist).
+
+    Returns:
+        {path, sheet, sheets, routed, ...}
+    """
+    from microapple_sheet import bridge, ops_openpyxl
+    if bridge.is_open(path).get("is_open"):
+        result = bridge.live_add_sheet(path, name)
+        result["routed"] = "live"
+        return result
+    result = ops_openpyxl.add_sheet(path, name)
+    result["routed"] = "file"
+    return result
+
+
+@mcp.tool()
+def excel_delete_sheet(path: str, name: str) -> dict[str, Any]:
+    """Delete a worksheet from a workbook (engine-routed).
+
+    Open in Excel → live bridge (Excel confirm dialog suppressed).
+    Closed → file engine. Refuses to delete the only sheet.
+
+    Args:
+        path: Absolute path to the workbook.
+        name: Sheet to delete.
+
+    Returns:
+        {path, sheet, sheets, routed, ...}
+    """
+    from microapple_sheet import bridge, ops_openpyxl
+    if bridge.is_open(path).get("is_open"):
+        result = bridge.live_delete_sheet(path, name)
+        result["routed"] = "live"
+        return result
+    result = ops_openpyxl.delete_sheet(path, name)
+    result["routed"] = "file"
+    return result
+
+
+@mcp.tool()
+def excel_rename_sheet(path: str, old_name: str, new_name: str) -> dict[str, Any]:
+    """Rename a worksheet (engine-routed: live when open, file when closed).
+
+    Args:
+        path:     Absolute path to the workbook.
+        old_name: Current sheet name.
+        new_name: New sheet name (must not already exist).
+
+    Returns:
+        {path, old_name, new_name, sheets, routed, ...}
+    """
+    from microapple_sheet import bridge, ops_openpyxl
+    if bridge.is_open(path).get("is_open"):
+        result = bridge.live_rename_sheet(path, old_name, new_name)
+        result["routed"] = "live"
+        return result
+    result = ops_openpyxl.rename_sheet(path, old_name, new_name)
+    result["routed"] = "file"
+    return result
+
+
+@mcp.tool()
+def excel_move_sheet(
+    path: str,
+    name: str,
+    before: str | None = None,
+    after: str | None = None,
+) -> dict[str, Any]:
+    """Reorder a worksheet before/after an anchor sheet (engine-routed).
+
+    Provide exactly one of *before* / *after* (anchor sheet name).
+
+    Args:
+        path:   Absolute path to the workbook.
+        name:   Sheet to move.
+        before: Move *name* immediately before this anchor sheet.
+        after:  Move *name* immediately after this anchor sheet.
+
+    Returns:
+        {path, sheet, sheets, routed, ...}
+    """
+    from microapple_sheet import bridge, ops_openpyxl
+    if bridge.is_open(path).get("is_open"):
+        result = bridge.live_move_sheet(path, name, before=before, after=after)
+        result["routed"] = "live"
+        return result
+    result = ops_openpyxl.move_sheet(path, name, before=before, after=after)
+    result["routed"] = "file"
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 

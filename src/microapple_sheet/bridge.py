@@ -883,3 +883,150 @@ def _values_match(a: Any, b: Any, rtol: float = 1e-6) -> bool:
         denom = max(abs(float(b)), 1e-12)
         return abs(float(a) - float(b)) / denom < rtol
     return str(a) == str(b)
+
+
+# ── Sheet management (live) — add / delete / move / rename ──────────────────
+#
+# Each script finds the open workbook by full path, performs the structural
+# change, collects `name of every worksheet` into a LIST inside the Excel tell
+# block, then builds the newline-joined output OUTSIDE the block — because
+# inside `tell application "Microsoft Excel"`, `linefeed` resolves to an Excel
+# dictionary term, not the AppleScript constant (the E8 class of bug).
+
+_SHEET_FINDER = """\
+    set wbFullPath to item 1 of argv
+    if application "Microsoft Excel" is not running then
+        error "Microsoft Excel is not running" number 1001
+    end if
+    tell application "Microsoft Excel"
+        set fullNames to full name of every workbook
+        set wbNames to name of every workbook
+        if fullNames is missing value then set fullNames to {}
+        if wbNames is missing value then set wbNames to {}
+    end tell
+    set targetName to missing value
+    repeat with i from 1 to (count of fullNames)
+        if (item i of fullNames as text) is wbFullPath then
+            set targetName to item i of wbNames
+            exit repeat
+        end if
+    end repeat
+    if targetName is missing value then
+        error "Workbook not open: " & wbFullPath number 1002
+    end if
+"""
+
+_SHEET_LIST_TAIL = """\
+    set lfCh to linefeed
+    set outStr to ""
+    repeat with nm in sheetList
+        set outStr to outStr & (nm as text) & lfCh
+    end repeat
+    return outStr
+end run
+"""
+
+_OP_ADD = """\
+    set sheetName to item 2 of argv
+    tell application "Microsoft Excel"
+        set wb to workbook targetName
+        if (exists worksheet sheetName of wb) then error "Sheet already exists: " & sheetName number 1003
+        set newWs to make new worksheet at end of wb
+        set name of newWs to sheetName
+        set sheetList to name of every worksheet of wb
+    end tell
+"""
+
+_OP_DELETE = """\
+    set sheetName to item 2 of argv
+    tell application "Microsoft Excel"
+        set wb to workbook targetName
+        if not (exists worksheet sheetName of wb) then error "Sheet not found: " & sheetName number 1004
+        set display alerts to false
+        delete worksheet sheetName of wb
+        set display alerts to true
+        set sheetList to name of every worksheet of wb
+    end tell
+"""
+
+_OP_MOVE = """\
+    set sheetName to item 2 of argv
+    set posMode to item 3 of argv
+    set anchorName to item 4 of argv
+    tell application "Microsoft Excel"
+        set wb to workbook targetName
+        if posMode is "after" then
+            move worksheet sheetName of wb to after worksheet anchorName of wb
+        else
+            move worksheet sheetName of wb to before worksheet anchorName of wb
+        end if
+        set sheetList to name of every worksheet of wb
+    end tell
+"""
+
+_OP_RENAME = """\
+    set oldName to item 2 of argv
+    set newName to item 3 of argv
+    tell application "Microsoft Excel"
+        set wb to workbook targetName
+        if not (exists worksheet oldName of wb) then error "Sheet not found: " & oldName number 1004
+        set name of worksheet oldName of wb to newName
+        set sheetList to name of every worksheet of wb
+    end tell
+"""
+
+_SCRIPT_LIVE_ADD_SHEET = "on run argv\n" + _SHEET_FINDER + _OP_ADD + _SHEET_LIST_TAIL
+_SCRIPT_LIVE_DELETE_SHEET = "on run argv\n" + _SHEET_FINDER + _OP_DELETE + _SHEET_LIST_TAIL
+_SCRIPT_LIVE_MOVE_SHEET = "on run argv\n" + _SHEET_FINDER + _OP_MOVE + _SHEET_LIST_TAIL
+_SCRIPT_LIVE_RENAME_SHEET = "on run argv\n" + _SHEET_FINDER + _OP_RENAME + _SHEET_LIST_TAIL
+
+
+def _run_sheet_op(script: str, argv: list[str]) -> list[str]:
+    """Run a sheet-management AppleScript; return the resulting sheet-name list."""
+    if not _IS_MACOS:
+        raise RuntimeError(_NOT_MACOS_DETAIL)
+    result = _run_with_edit_retry(script, argv)
+    if not result["ok"]:
+        raise RuntimeError(_error_detail(result))
+    return [s for s in result["stdout"].splitlines() if s.strip()]
+
+
+def live_add_sheet(path: str | Path, name: str) -> dict[str, Any]:
+    """Add a worksheet (at end) to an open workbook via AppleScript."""
+    p = Path(path).resolve()
+    sheets = _run_sheet_op(_SCRIPT_LIVE_ADD_SHEET, [str(p), name])
+    return {"path": str(p), "sheet": name, "sheets": sheets, "source": "live",
+            "detail": f"Added '{name}' at end — ⌘S to persist."}
+
+
+def live_delete_sheet(path: str | Path, name: str) -> dict[str, Any]:
+    """Delete a worksheet from an open workbook (alerts suppressed)."""
+    p = Path(path).resolve()
+    sheets = _run_sheet_op(_SCRIPT_LIVE_DELETE_SHEET, [str(p), name])
+    return {"path": str(p), "sheet": name, "sheets": sheets, "source": "live",
+            "detail": f"Deleted '{name}' — ⌘S to persist."}
+
+
+def live_move_sheet(
+    path: str | Path, name: str, before: str | None = None, after: str | None = None
+) -> dict[str, Any]:
+    """Move a worksheet before/after an anchor sheet in an open workbook."""
+    p = Path(path).resolve()
+    if after:
+        argv = [str(p), name, "after", after]
+    elif before:
+        argv = [str(p), name, "before", before]
+    else:
+        raise ValueError("live_move_sheet requires before= or after=")
+    sheets = _run_sheet_op(_SCRIPT_LIVE_MOVE_SHEET, argv)
+    return {"path": str(p), "sheet": name, "sheets": sheets, "source": "live",
+            "detail": f"Moved '{name}' — ⌘S to persist."}
+
+
+def live_rename_sheet(path: str | Path, old_name: str, new_name: str) -> dict[str, Any]:
+    """Rename a worksheet in an open workbook."""
+    p = Path(path).resolve()
+    sheets = _run_sheet_op(_SCRIPT_LIVE_RENAME_SHEET, [str(p), old_name, new_name])
+    return {"path": str(p), "old_name": old_name, "new_name": new_name,
+            "sheets": sheets, "source": "live",
+            "detail": f"Renamed '{old_name}' → '{new_name}' — ⌘S to persist."}
