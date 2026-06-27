@@ -73,6 +73,8 @@ on run argv
     tell application "Microsoft Excel"
         set fullNames to full name of every workbook
         set wbNames to name of every workbook
+        if fullNames is missing value then set fullNames to {}
+        if wbNames is missing value then set wbNames to {}
     end tell
     set outStr to ""
     repeat with i from 1 to (count of fullNames)
@@ -96,6 +98,8 @@ on run argv
     tell application "Microsoft Excel"
         set fullNames to full name of every workbook
         set wbNames to name of every workbook
+        if fullNames is missing value then set fullNames to {}
+        if wbNames is missing value then set wbNames to {}
     end tell
     set targetName to missing value
     repeat with i from 1 to (count of fullNames)
@@ -156,6 +160,8 @@ on run argv
     tell application "Microsoft Excel"
         set fullNames to full name of every workbook
         set wbNames to name of every workbook
+        if fullNames is missing value then set fullNames to {}
+        if wbNames is missing value then set wbNames to {}
     end tell
     set targetName to missing value
     repeat with i from 1 to (count of fullNames)
@@ -251,6 +257,8 @@ on run argv
     tell application "Microsoft Excel"
         set fullNames to full name of every workbook
         set wbNames to name of every workbook
+        if fullNames is missing value then set fullNames to {}
+        if wbNames is missing value then set wbNames to {}
     end tell
     set targetName to missing value
     repeat with i from 1 to (count of fullNames)
@@ -312,6 +320,8 @@ on run argv
     tell application "Microsoft Excel"
         set fullNames to full name of every workbook
         set wbNames to name of every workbook
+        if fullNames is missing value then set fullNames to {}
+        if wbNames is missing value then set wbNames to {}
     end tell
     set targetName to missing value
     repeat with i from 1 to (count of fullNames)
