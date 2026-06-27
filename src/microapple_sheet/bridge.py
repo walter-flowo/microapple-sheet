@@ -171,34 +171,39 @@ on run argv
         set ws to worksheet sheetName of workbook targetName
         set r to range rangeName of ws
         set rawVals to formula of r
-        if class of rawVals is list then
-            if (count of rawVals) > 0 and class of item 1 of rawVals is list then
-                set vals to rawVals
-            else
-                set vals to {rawVals}
-            end if
-        else
-            set vals to {{rawVals}}
-        end if
-        set nRows to count of vals
-        set nCols to count of item 1 of vals
-        set outStr to (nRows as text) & tab & (nCols as text) & linefeed
-        repeat with theRow in vals
-            set rowStr to ""
-            set isFirst to true
-            repeat with cellVal in theRow
-                if not isFirst then set rowStr to rowStr & tab
-                if cellVal is missing value then
-                    set rowStr to rowStr & ""
-                else
-                    set rowStr to rowStr & (cellVal as text)
-                end if
-                set isFirst to false
-            end repeat
-            set outStr to outStr & rowStr & linefeed
-        end repeat
-        return outStr
     end tell
+    -- Build the TSV OUTSIDE the Excel tell block: inside it, `tab`/`linefeed`
+    -- resolve to Excel dictionary terms (the literal word "tab") not the
+    -- AppleScript character constants. Capture them here, as the values script does.
+    set tabCh to tab
+    set lfCh to linefeed
+    if class of rawVals is list then
+        if (count of rawVals) > 0 and class of item 1 of rawVals is list then
+            set vals to rawVals
+        else
+            set vals to {rawVals}
+        end if
+    else
+        set vals to {{rawVals}}
+    end if
+    set nRows to count of vals
+    set nCols to count of item 1 of vals
+    set outStr to (nRows as text) & tabCh & (nCols as text) & lfCh
+    repeat with theRow in vals
+        set rowStr to ""
+        set isFirst to true
+        repeat with cellVal in theRow
+            if not isFirst then set rowStr to rowStr & tabCh
+            if cellVal is missing value then
+                set rowStr to rowStr & ""
+            else
+                set rowStr to rowStr & (cellVal as text)
+            end if
+            set isFirst to false
+        end repeat
+        set outStr to outStr & rowStr & lfCh
+    end repeat
+    return outStr
 end run
 """
 
@@ -259,6 +264,9 @@ on run argv
     end if
     tell application "Microsoft Excel"
         set ws to worksheet sheetName of workbook targetName
+        -- rangeName is pre-expanded by the Python caller to the full nRows x nCols
+        -- block, so a plain matrix assignment fills every cell (a 1-cell range
+        -- would otherwise capture only the top-left value).
         if nRows = 1 and nCols = 1 then
             set value of range rangeName of ws to my decodeVal(item 1 of flatVals)
         else if nRows = 1 then
@@ -741,8 +749,27 @@ def live_set(
     p = Path(path).resolve()
     nrows = len(values)
     ncols = len(values[0]) if values else 0
-    argv = _pack_set_argv(str(p), sheet, range_, values)
 
+    # Expand a top-left cell ("S25") to the full nRows x nCols block ("S25:S40")
+    # so the write covers every cell — assigning a matrix to a single-cell range
+    # fills only the top-left (silent partial write). A full range passed in is
+    # re-derived from its own top-left, so both call styles behave identically.
+    from openpyxl.utils.cell import (
+        coordinate_from_string,
+        column_index_from_string,
+        get_column_letter,
+    )
+
+    top_left = range_.split(":")[0]
+    col_letter, row_num = coordinate_from_string(top_left)
+    c0 = column_index_from_string(col_letter)
+    full_range = (
+        f"{top_left}:{get_column_letter(c0 + ncols - 1)}{row_num + nrows - 1}"
+        if (nrows * ncols) > 1
+        else top_left
+    )
+
+    argv = _pack_set_argv(str(p), sheet, full_range, values)
     result = _run_with_edit_retry(_SCRIPT_LIVE_SET, argv)
 
     if not result["ok"]:
@@ -750,25 +777,30 @@ def live_set(
 
     cells_written = nrows * ncols
 
-    # Read-back verify (best-effort: only first cell)
+    # Read-back verify the FULL written block, not just the first cell —
+    # otherwise a partial write would still report verified=True.
     verified = False
     try:
-        top_left = range_.split(":")[0]
         rb = _run_osascript(
-            _SCRIPT_LIVE_READ_VALUES, [str(p), sheet, top_left], timeout=8
+            _SCRIPT_LIVE_READ_VALUES, [str(p), sheet, full_range], timeout=8
         )
         if rb["ok"]:
             rb_data = _parse_tsv_output(rb["stdout"])
-            rb_val = rb_data[0][0] if rb_data and rb_data[0] else None
-            expected = values[0][0] if values and values[0] else None
-            verified = _values_match(rb_val, expected)
+            verified = len(rb_data) == nrows and all(
+                len(rb_data[i]) == ncols
+                and all(
+                    _values_match(rb_data[i][j], values[i][j])
+                    for j in range(ncols)
+                )
+                for i in range(nrows)
+            )
     except Exception:
         pass  # verification is best-effort; write already succeeded
 
     return {
         "path": str(p),
         "sheet": sheet,
-        "range": range_,
+        "range": full_range,
         "cells_written": cells_written,
         "verified": verified,
         "detail": "Unsaved in Excel — ⌘S to persist.",
