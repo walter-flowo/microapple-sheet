@@ -780,40 +780,62 @@ def live_set(
     )
 
     argv = _pack_set_argv(str(p), sheet, full_range, values)
-    result = _run_with_edit_retry(_SCRIPT_LIVE_SET, argv)
-
-    if not result["ok"]:
-        raise RuntimeError(_error_detail(result))
-
     cells_written = nrows * ncols
 
-    # Read-back verify the FULL written block, not just the first cell —
-    # otherwise a partial write would still report verified=True.
-    verified = False
-    try:
-        rb = _run_osascript(
-            _SCRIPT_LIVE_READ_VALUES, [str(p), sheet, full_range], timeout=8
-        )
-        if rb["ok"]:
-            rb_data = _parse_tsv_output(rb["stdout"])
-            verified = len(rb_data) == nrows and all(
-                len(rb_data[i]) == ncols
-                and all(
-                    _values_match(rb_data[i][j], values[i][j])
-                    for j in range(ncols)
-                )
-                for i in range(nrows)
+    # E10: a rapid sequential set can return ok=True yet not persist (Excel busy
+    # mid-recalc). Strategy: write -> verify -> retry. E11: the read-back verify
+    # is FORMULA-AWARE — a formula cell is verified when it COMPUTED (non-None,
+    # non-error), not when the read-back value equals the formula string.
+    def _verify_block() -> bool:
+        try:
+            rb = _run_osascript(
+                _SCRIPT_LIVE_READ_VALUES, [str(p), sheet, full_range], timeout=8
             )
-    except Exception:
-        pass  # verification is best-effort; write already succeeded
+            if not rb["ok"]:
+                return False
+            rb_data = _parse_tsv_output(rb["stdout"])
+            if len(rb_data) != nrows:
+                return False
+            for i in range(nrows):
+                if len(rb_data[i]) != ncols:
+                    return False
+                for j in range(ncols):
+                    inp = values[i][j]
+                    got = rb_data[i][j]
+                    if isinstance(inp, str) and inp.startswith("="):
+                        if got is None or (
+                            isinstance(got, str) and got.startswith("#")
+                        ):
+                            return False
+                    elif not _values_match(got, inp):
+                        return False
+            return True
+        except Exception:
+            return False
 
+    verified = False
+    attempts = 0
+    for attempts in range(1, _EDIT_RETRY_COUNT + 1):
+        result = _run_with_edit_retry(_SCRIPT_LIVE_SET, argv)
+        if not result["ok"]:
+            raise RuntimeError(_error_detail(result))
+        verified = _verify_block()
+        if verified:
+            break
+        if attempts < _EDIT_RETRY_COUNT:
+            time.sleep(_EDIT_RETRY_DELAY)
+
+    detail = "Unsaved in Excel — ⌘S to persist."
+    if not verified:
+        detail += f" [WARNING: read-back unverified after {attempts} attempts]"
     return {
         "path": str(p),
         "sheet": sheet,
         "range": full_range,
         "cells_written": cells_written,
         "verified": verified,
-        "detail": "Unsaved in Excel — ⌘S to persist.",
+        "attempts": attempts,
+        "detail": detail,
     }
 
 
